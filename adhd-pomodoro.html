@@ -612,21 +612,56 @@ function setProgress(elId, ratio) {
 
 function soundOn() { return document.getElementById('sound-toggle').checked; }
 
-function playBeep(freq=880, dur=0.4) {
-  if (!soundOn()) return;
-  try {
-    const ctx = new (window.AudioContext||window.webkitAudioContext)();
-    const osc = ctx.createOscillator(), g = ctx.createGain();
-    osc.connect(g); g.connect(ctx.destination);
-    osc.type='sine'; osc.frequency.value=freq;
-    g.gain.setValueAtTime(0.28, ctx.currentTime);
-    g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime+dur);
-    osc.start(ctx.currentTime); osc.stop(ctx.currentTime+dur);
-  } catch(e){}
+// iOSはユーザー操作時にAudioContextを初期化・resumeしないと音が出ない
+let _audioCtx = null;
+function getAudioCtx() {
+  if (!_audioCtx) {
+    _audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  }
+  if (_audioCtx.state === 'suspended') {
+    _audioCtx.resume();
+  }
+  return _audioCtx;
 }
 
+// ユーザーの最初のタップ時にAudioContextを解除しておく
+document.addEventListener('touchstart', () => { try { getAudioCtx(); } catch(e){} }, { once: true });
+document.addEventListener('click',      () => { try { getAudioCtx(); } catch(e){} }, { once: true });
+
+function playTone(freq, startTime, dur, ctx) {
+  const osc = ctx.createOscillator();
+  const g   = ctx.createGain();
+  osc.connect(g); g.connect(ctx.destination);
+  osc.type = 'sine';
+  osc.frequency.setValueAtTime(freq, startTime);
+  g.gain.setValueAtTime(0, startTime);
+  g.gain.linearRampToValueAtTime(0.22, startTime + 0.02);
+  g.gain.exponentialRampToValueAtTime(0.001, startTime + dur);
+  osc.start(startTime);
+  osc.stop(startTime + dur);
+}
+
+// ポポン♪ — 短い2音
+function playBeep() {
+  if (!soundOn()) return;
+  try {
+    const ctx = getAudioCtx();
+    const t = ctx.currentTime;
+    playTone(660, t,        0.18, ctx); // ポ
+    playTone(880, t + 0.2,  0.22, ctx); // ポン
+  } catch(e) {}
+}
+
+// 休憩終了チャイム — 柔らかい3音
 function playChime() {
-  [523,659,784].forEach((f,i) => setTimeout(()=>playBeep(f,0.35),i*180));
+  if (!soundOn()) return;
+  try {
+    const ctx = getAudioCtx();
+    const t = ctx.currentTime;
+    playTone(523, t,        0.3, ctx);
+    playTone(659, t + 0.22, 0.3, ctx);
+    playTone(784, t + 0.44, 0.4, ctx);
+  } catch(e) {}
 }
 
 function renderDots(count) {
@@ -666,7 +701,7 @@ function idleComplete() {
   playBeep();
   state.phase = 'choice';
   showScreen('screen-choice');
-  state.choiceTimer = setTimeout(() => playBeep(660, 0.3), 30000);
+  state.choiceTimer = setTimeout(() => playBeep(), 30000);
 }
 
 // WORK
